@@ -1,46 +1,48 @@
-import asyncio
-
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from bs4 import BeautifulSoup
 import requests
-from typing import final
-import pymongo
 from pymongo import MongoClient
+from bs4 import BeautifulSoup
 from time import sleep
+import urllib3
 
-TOKEN = final("6466778336:AAEobL0_XWIo314UFANHbGL6QaicK8LSEww")
-URL = final("https://uet.vnu.edu.vn/category/tin-tuc/tin-sinh-vien/feed/")
+from keep_alive import keep_alive
 
-client = MongoClient("mongodb+srv://pknstudio2704:nguyenitdev2704@cluster0.xafk9pw.mongodb.net/?retryWrites=true&w=majority")
+
+urllib3.disable_warnings()
+
+TELEBOT_TOKEN = "6466778336:AAEobL0_XWIo314UFANHbGL6QaicK8LSEww"
+GROUP_ID = "uetnewsnoti"
+URL = "https://uet.vnu.edu.vn/category/tin-tuc/tin-sinh-vien/"
+
+
+client = MongoClient("mongodb+srv://pknstudio2704:nguyenitdev2704@cluster0.xafk9pw.mongodb.net/?retryWrites=true&w"
+                     "=majority")
 db = client["UETNews"]
 news_collection = db["news"]
 
+
 def get_news():
-    page = requests.get(URL)
-    soup = BeautifulSoup(page.content, "xml")
-    item = soup.find("item")
-    title = item.find("title").text
-    url = item.find("guid").text
+    page = requests.get(URL, verify=False)
+    soup = BeautifulSoup(page.text, 'html.parser')
+    item = soup.find("h3")
+    title = item.a.get("title")
+    url = item.a.get("href")
     new = {"title": title, "url": url}
     return new
 
 
-async def create_news(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def send_news():
     data = get_news()
     check_news = news_collection.find_one(data)
-    if check_news:
-        await context.bot.send_message(chat_id="@UETNewsNotification", text="exist")
-    else:
+    if not check_news:
         result = news_collection.delete_many({})
         news_collection.insert_one(data)
-        url = data["url"]
-        await update.message.reply_text(f"{url}")
+        message = data["url"]
+        telegram_api_url = f"https://api.telegram.org/bot{TELEBOT_TOKEN}/sendMessage?chat_id=@{GROUP_ID}&text={message}"
+        update = requests.get(telegram_api_url)
 
 
-if __name__ == '__main__':
-    while True:
-        sleep(10)
-        app = ApplicationBuilder().token(TOKEN).build()
-        app.add_handler(CommandHandler("news", create_news))
-        app.run_polling()
+keep_alive()
+while True:
+  sleep(40)
+  send_news()
+
